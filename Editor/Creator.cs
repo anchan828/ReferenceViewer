@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization.Formatters.Binary;
 using UnityEditor;
 using System.IO;
+using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace ReferenceViewer
 {
@@ -13,20 +16,22 @@ namespace ReferenceViewer
             if (!EditorApplication.SaveCurrentSceneIfUserWantsTo()) return;
 
             var currentScene = EditorApplication.currentScene;
-		
-            var data = new Data();
 
+           
+           
             Generate.Build(AssetDatabase.GetAllAssetPaths(), assetData =>
             {
+                var data = ScriptableObject.CreateInstance<Data>();
+               
                 data.assetData.AddRange(assetData);
+                Export(data);
+                if (string.IsNullOrEmpty(currentScene))
+                    EditorApplication.NewScene();
+                else
+                    EditorApplication.OpenScene(currentScene);
+               
+               
                 EditorUtility.UnloadUnusedAssets();
-
-				if(string.IsNullOrEmpty(currentScene))
-					EditorApplication.NewScene();
-				else
-                	EditorApplication.OpenScene(currentScene);
-                
-				Export(data);
                 if (callback != null)
                     callback();
             });
@@ -44,7 +49,8 @@ namespace ReferenceViewer
                 assetData.sceneData =
                     assetData.sceneData.Distinct(new CompareSelector<SceneData, string>(s => s.name + s.guid)).ToList();
             }
-            File.WriteAllBytes(directory + "/data.dat", ObjectToByteArray(data));
+            File.Delete(directory + "/data.dat");
+            UnityEditorInternal.InternalEditorUtility.SaveToSerializedFileAndForget(new Object[] { data }, directory + "/data.dat", true);
         }
 
         static byte[] ObjectToByteArray(object obj)
@@ -55,6 +61,13 @@ namespace ReferenceViewer
             var ms = new MemoryStream();
             bf.Serialize(ms, obj);
             return ms.ToArray();
+        }
+    }
+    public static class Extensions
+    {
+        public static HashSet<T> ToHashSet<T>(this IEnumerable<T> source)
+        {
+            return new HashSet<T>(source);
         }
     }
 }

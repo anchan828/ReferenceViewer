@@ -38,14 +38,12 @@ namespace ReferenceViewer
             sceneReference.Clear();
             var path = "build/ReferenceViewer/data.dat";
 
-            var guids = Selection.objects.Select(obj => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(obj))).ToArray();
+            var selectedObjects = Selection.objects;
 
             Action find = () =>
             {
-                var text = File.ReadAllBytes(path);
-                var data = ByteArrayToObject<Data>(text);
-
-                Find(data, guids);
+                var data = UnityEditorInternal.InternalEditorUtility.LoadSerializedFileAndForget(path)[0] as Data;
+                Find(data, selectedObjects);
             };
 
             if (File.Exists(path))
@@ -61,38 +59,98 @@ namespace ReferenceViewer
             }
         }
 
-        private static void Find(Data data, params string[] guids)
+        private static void Find(Data data, params Object[] selectedObjects)
         {
-            var items = guids
-               .Select(guid => new
-               {
-                   type = AssetDatabase.LoadAssetAtPath(AssetDatabase.GUIDToAssetPath(guid), typeof(Object)).GetType(),
-                   searched = GetGUIContent(guid),
-                   referenced =
-                       data.assetData.Where(assetData => assetData.reference.Contains(guid))
-                           .Select(assetData => GetGUIContent(assetData.guid))
-                           .Where(c => c.image && guid != AssetDatabase.AssetPathToGUID(c.tooltip))
-                           .OrderBy(c => c.image.name)
-                           .ToList(),
-                   reference =
-                       data.assetData.Find(item => item.guid == guid)
-                           .reference.Where(g => g != guid)
-                           .Select(g => GetGUIContent(g))
-                           .Where(c => c.image)
-                           .OrderBy(c => c.image.name)
-                           .ToList()
-               })
-               .Where(item => (item.referenced.Count != 0 || item.reference.Count != 0) && item.searched.image)
-               .OrderBy(item => item.searched.image.name)
-               .Select(item => new Item
-               {
-                   type = item.type,
-                   searchedGUIContent = item.searched,
-                   referencedGUIContents = item.referenced,
-                   referenceGUIContents = item.reference
-               })
-               .Distinct(new CompareSelector<Item, string>(i => i.searchedGUIContent.tooltip))
-               .ToList();
+
+            var items = new List<Item>();
+            var guids = new List<string>();
+            foreach (var selectedObject in selectedObjects)
+            {
+                var guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(selectedObject));
+                if (AssetDatabase.IsSubAsset(selectedObject))
+                {
+                    var item = new Item();
+                    item.searchedGUIContent = GetGUIContent(selectedObject);
+                    item.type = selectedObject.GetType();
+
+                    foreach (var assetData in data.assetData)
+                    {
+                        foreach (var subAssetData in assetData.subAssets)
+                        {
+
+                            var type = Types.GetType(subAssetData.typeName, "UnityEngine.dll");
+
+                            if (subAssetData.guid == guid && type == selectedObject.GetType())
+                            {
+                                item.referencedGUIContents.Add(GetGUIContent(assetData.guid));
+                            }
+
+                        }
+                    }
+                    item.referencedGUIContents = item.referencedGUIContents.Distinct(
+                         new CompareSelector<GUIContent, string>(i => i.tooltip)).ToList();
+
+                    items.Add(item);
+                }
+                else
+                {
+                    guids.Add(guid);
+
+                    foreach (var assetData in data.assetData.Where(assetData => guid == assetData.guid))
+                    {
+                        foreach (var subAssetData in assetData.subAssets)
+                        {
+                            var type = Types.GetType(subAssetData.typeName, "UnityEngine.dll");
+                            var tex = AssetPreview.GetMiniTypeThumbnail(type);
+
+                            var item =
+                                items.FirstOrDefault(_item => _item.searchedGUIContent.tooltip == GetGUIContent(selectedObject).tooltip);
+                            if (item == null)
+                            {
+                                item = new Item { searchedGUIContent = GetGUIContent(selectedObject) };
+                                items.Add(item);
+                            }
+                            item.type = type;
+                            item.referenceGUIContents.Add(new GUIContent(subAssetData.name, tex, AssetDatabase.GUIDToAssetPath(subAssetData.guid)));
+                            item.referenceGUIContents = item.referenceGUIContents.Distinct(
+                        new CompareSelector<GUIContent, string>(i => i.text)).ToList();
+                        }
+
+                    }
+                }
+            }
+
+            items.AddRange(guids
+            .Select(guid => new
+            {
+                type = AssetDatabase.LoadAssetAtPath(AssetDatabase.GUIDToAssetPath(guid), typeof(Object)).GetType(),
+                searched = GetGUIContent(guid),
+                referenced =
+                    data.assetData.Where(assetData => assetData.reference.Contains(guid))
+                        .Select(assetData => GetGUIContent(assetData.guid))
+                        .Where(c => c.image && guid != AssetDatabase.AssetPathToGUID(c.tooltip))
+                        .OrderBy(c => c.image.name)
+                        .ToList(),
+                reference =
+                    data.assetData.Find(item => item.guid == guid)
+                        .reference.Where(g => g != guid)
+                        .Select(g => GetGUIContent(g))
+                        .Where(c => c.image)
+                        .OrderBy(c => c.image.name)
+                        .ToList()
+            })
+            .Where(item => (item.referenced.Count != 0 || item.reference.Count != 0) && item.searched.image)
+            .OrderBy(item => item.searched.image.name)
+            .Select(item => new Item
+            {
+                type = item.type,
+                searchedGUIContent = item.searched,
+                referencedGUIContents = item.referenced,
+                referenceGUIContents = item.reference
+            })
+            .ToList());
+            items.Distinct(new CompareSelector<Item, string>(i => i.searchedGUIContent.tooltip));
+           
             foreach (var item in items)
             {
                 foreach (var i in item.referencedGUIContents)
@@ -109,15 +167,15 @@ namespace ReferenceViewer
                         {
                             sceneReference.Add(key, d.Select(s => new GUIContent(s.name, AssetDatabase.GUIDToAssetPath(s.guid))).ToList());
                         }
-
-
                     }
                 }
             }
-
-            GetWindow<ReferenceViewer>().Results(items);
+            var window = GetWindow<ReferenceViewer>();
+            window.selectedFilter = 0;
+            window.Results(items);
         }
 
+       
         private void Results(List<Item> items)
         {
             this.items = items;
@@ -126,11 +184,11 @@ namespace ReferenceViewer
         private void OnGUI()
         {
             EditorGUILayout.BeginHorizontal();
-            
+
             if (GUILayout.Button("Update", EditorStyles.toolbarButton))
             {
                 Creator.Build();
-				EditorGUIUtility.ExitGUI();
+                EditorGUIUtility.ExitGUI();
             }
 
             EditorGUI.BeginChangeCheck();
@@ -160,8 +218,19 @@ namespace ReferenceViewer
 
             pos = EditorGUILayout.BeginScrollView(pos);
 
-            foreach (var item in items)
+            var groupBy = items.GroupBy(item => item.searchedGUIContent.tooltip);
+            foreach (var group in groupBy)
             {
+                var enumerator = @group.GetEnumerator();
+                var item = new Item();
+                while (enumerator.MoveNext())
+                {
+                    item.type = enumerator.Current.type;
+                    item.searchedGUIContent = enumerator.Current.searchedGUIContent;
+                    item.referenceGUIContents.AddRange(enumerator.Current.referenceGUIContents);
+                    item.referencedGUIContents.AddRange(enumerator.Current.referencedGUIContents);
+                }
+
                 if (selectedFilter != 0 && item.type != types[selectedFilter - 1])
                 {
                     continue;
@@ -230,7 +299,7 @@ namespace ReferenceViewer
             }
         }
 
-        
+
 
         private static bool IsScene(GUIContent content)
         {
@@ -258,6 +327,7 @@ namespace ReferenceViewer
 
         private static GUIContent GetGUIContent(Object obj)
         {
+            if (!obj) return new GUIContent();
             var content = new GUIContent(EditorGUIUtility.ObjectContent(obj, obj.GetType()));
 
             var type = PrefabUtility.GetPrefabType(obj);
