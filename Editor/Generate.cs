@@ -77,15 +77,15 @@ namespace ReferenceViewer
 
         private static void AddReferenceForStateMachine(AssetData assetData, AnimatorStateMachine stateMachine)
         {
-            foreach (var stateMachineBehaviourInfo in stateMachine.states
+            foreach (var stateMachineBehaviour in stateMachine.states
                 .SelectMany(childAnimatorState => childAnimatorState.state.behaviours))
             {
-                AddReferenceForObject(assetData, stateMachineBehaviourInfo.stateMachineBehaviour);
+                AddReferenceForObject(assetData, stateMachineBehaviour);
             }
 
-            foreach (var stateMachineBehaviourInfo in stateMachine.behaviours)
+            foreach (var stateMachineBehaviour in stateMachine.behaviours)
             {
-                AddReferenceForObject(assetData, stateMachineBehaviourInfo.stateMachineBehaviour);
+                AddReferenceForObject(assetData, stateMachineBehaviour);
             }
 
             foreach (var childAnimatorStateMachine in stateMachine.stateMachines)
