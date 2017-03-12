@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization.Formatters.Binary;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using System.IO;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -13,25 +14,31 @@ namespace ReferenceViewer
     {
         public static void Build(Action callback = null)
         {
-            if (!EditorApplication.SaveCurrentSceneIfUserWantsTo()) return;
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
-            var currentScene = EditorApplication.currentScene;
+            var currentScenes = EditorSceneManager.GetSceneManagerSetup().Select(sm => sm.path).ToArray();
 
-           
-           
+
             Generate.Build(AssetDatabase.GetAllAssetPaths(), assetData =>
             {
                 var data = ScriptableObject.CreateInstance<Data>();
-               
+
                 data.assetData.AddRange(assetData);
                 Export(data);
-                if (string.IsNullOrEmpty(currentScene))
-                    EditorApplication.NewScene();
+
+                if (!currentScenes.Any())
+                    EditorSceneManager.NewScene(NewSceneSetup.EmptyScene);
                 else
-                    EditorApplication.OpenScene(currentScene);
-               
-               
-                EditorUtility.UnloadUnusedAssets();
+                {
+                    EditorSceneManager.OpenScene(currentScenes[0]);
+
+                    foreach (var currentScene in currentScenes.Skip(0))
+                    {
+                        EditorSceneManager.OpenScene(currentScene, OpenSceneMode.Additive);
+                    }
+                }
+
+                EditorUtility.UnloadUnusedAssetsImmediate();
                 if (callback != null)
                     callback();
             });
@@ -39,7 +46,7 @@ namespace ReferenceViewer
 
         private static void Export(Data data)
         {
-            data.assetData = data.assetData.OrderBy(d => Path.GetExtension(d.path)).ToList();
+            data.assetData = data.assetData.OrderBy(d => Path.GetExtension(d.assetPath)).ToList();
             const string directory = "build/ReferenceViewer";
 
             Directory.CreateDirectory(directory);
@@ -50,7 +57,9 @@ namespace ReferenceViewer
                     assetData.sceneData.Distinct(new CompareSelector<SceneData, string>(s => s.name + s.guid)).ToList();
             }
             File.Delete(directory + "/data.dat");
-            UnityEditorInternal.InternalEditorUtility.SaveToSerializedFileAndForget(new Object[] { data }, directory + "/data.dat", true);
+            UnityEditorInternal.InternalEditorUtility.SaveToSerializedFileAndForget(new Object[] {data},
+                directory + "/data.dat", true);
+            AssetDatabase.CreateAsset(data, "Assets/Test.asset");
         }
 
         static byte[] ObjectToByteArray(object obj)
@@ -63,6 +72,7 @@ namespace ReferenceViewer
             return ms.ToArray();
         }
     }
+
     public static class Extensions
     {
         public static HashSet<T> ToHashSet<T>(this IEnumerable<T> source)

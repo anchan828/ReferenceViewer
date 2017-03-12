@@ -18,16 +18,6 @@ namespace ReferenceViewer
     }
 
     [System.Serializable]
-    public class AssetData
-    {
-        public string path = "";
-        public string guid = "";
-        public List<string> reference = new List<string>();
-        public List<SubAssetData> subAssets = new List<SubAssetData>();
-        public List<SceneData> sceneData = new List<SceneData>();
-    }
-
-    [System.Serializable]
     public class SubAssetData
     {
         public string guid = "";
